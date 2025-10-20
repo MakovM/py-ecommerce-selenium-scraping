@@ -10,6 +10,7 @@ from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC # NOQA
+from tqdm import tqdm
 
 BASE_URL = "https://webscraper.io/"
 HOME_URL = urljoin(BASE_URL, "test-sites/e-commerce/more/")
@@ -47,7 +48,12 @@ def get_driver() -> WebDriver:
 def accept_cookies(driver: WebDriver) -> None:
     try:
         accept_button = WebDriverWait(driver, 5).until(
-            EC.element_to_be_clickable((By.CLASS_NAME, "acceptCookies"))
+            EC.element_to_be_clickable(
+                (
+                    By.CSS_SELECTOR,
+                    "div.acceptContainer > button.acceptCookies"
+                )
+            )
         )
         accept_button.click()
     except TimeoutException:
@@ -61,7 +67,7 @@ def parse_single_product(product: BeautifulSoup) -> Product:
             ".description"
         ).text.replace("\xa0", " "),
         price=float(product.select_one(".price").text.replace("$", "")),
-        rating=len(product.select(".ws-icon-star")),
+        rating=len(product.select(".ratings .ws-icon-star")),
         num_of_reviews=int(
             product.select_one(".review-count").text.split()[0]
         ),
@@ -69,7 +75,7 @@ def parse_single_product(product: BeautifulSoup) -> Product:
 
 
 def write_products_to_csv(products: [Product], filename: str) -> None:
-    with open(f"{filename}.csv", "w", newline="") as f:
+    with open(f"{filename}.csv", "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(PRODUCT_FIELDS)
         writer.writerows([astuple(product) for product in products])
@@ -83,15 +89,17 @@ def get_products(url: str, csv_name: str) -> None:
 
     while True:
         try:
+            current_count = len(driver.find_elements(By.CSS_SELECTOR, ".card-body"))
             more_button = wait.until(
-                EC.element_to_be_clickable(
-                    (By.CLASS_NAME, "ecomerce-items-scroll-more")
-                )
+                EC.element_to_be_clickable((By.CLASS_NAME, "ecomerce-items-scroll-more"))
             )
-            if more_button.text != "More":
+            if more_button.text.strip().lower() != "more":
                 break
             more_button.click()
-            time.sleep(1)
+            wait.until(
+                lambda d: len(d.find_elements(By.CSS_SELECTOR, ".card-body")) > current_count
+            )
+
         except TimeoutException:
             break
 
@@ -106,7 +114,7 @@ def get_products(url: str, csv_name: str) -> None:
 
 
 def get_all_products() -> None:
-    for csv_name, url in PAGES.items():
+    for csv_name, url in tqdm(PAGES.items()):
         get_products(url, csv_name)
 
 
